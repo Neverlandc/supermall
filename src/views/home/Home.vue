@@ -1,13 +1,20 @@
 <template>
     <div id="home">
         <nav-bar class="home-nav"><div slot="center">购物街</div></nav-bar>
-        
-        <scroll class="content" ref="scroll" :probe-type="3" @scroll="contentScroll">
-            <home-swiper :banners="banners"/>
+         <tab-control :titles="['流行','精选','新款']" @tabClick="tabClick" 
+                          ref="tabControl1" class="tab-control"
+                          v-show="isTabFixed"/>
+        <scroll class="content" 
+                ref="scroll" 
+                :probe-type="3" 
+                @scroll="contentScroll" 
+                :pull-up-load="true"
+                @pullingUp="loadMore">
+            <home-swiper :banners="banners" @swiperImageLoad="swiperImageLoad"/>
             <recommend-view :recommends="recommends"/>
             <feature-view/>
-            <tab-control class="tab-control" 
-            :titles="['流行','精选','新款']" @tabClick="tabClick"/>
+            <tab-control :titles="['流行','精选','新款']" @tabClick="tabClick" 
+                          ref="tabControl2"/>
             <goods-list :goods="showGoods"/>
         </scroll> 
 
@@ -27,6 +34,7 @@
     import BackTop from 'components/content/backTop/BackTop'
 
     import {getHomeMultidata, getHomeGoods} from 'network/home'
+    import {debounce} from 'common/utils'
     
 
     export default {
@@ -51,7 +59,10 @@
                     'sell': {page: 0, list: []}, 
                 },
                 currentType: 'pop',
-                isShowBackTop: false
+                isShowBackTop: false,
+                tabOffsetTop: 0,
+                isTabFixed: false,
+                saveY: 0
             }
         },
         created() {
@@ -62,11 +73,31 @@
             this.getHomeGoods('pop')
             this.getHomeGoods('new')
             this.getHomeGoods('sell')
+
+            
+        },
+        mounted() {
+            // 1.图片加载完成的事件监听
+            const refresh = debounce(this.$refs.scroll.refresh,200)
+            // 监听item中图片加载完成
+            this.$bus.$on('itemImageLoad', () => {
+                refresh()
+            })
         },
         computed: {
             showGoods() {
                 return this.goods[this.currentType].list
-            }
+            } 
+        },
+        destroyed() {
+            console.log('home 销毁');
+        },
+        activated() {
+            this.$refs.scroll.scrollTo(0, this.saveY, 0)
+            this.$refs.scroll.refresh()
+        },
+        deactivated() {
+            this.saveY = this.$refs.scroll.getScrollY()
         },
         methods: {
             // 事件监听相关
@@ -82,12 +113,25 @@
                         this.currentType = 'sell'
                         break
                 }
+                this.$refs.tabControl1.currentIndex = index
+                this.$refs.tabControl2.currentIndex = index
             },
             backClick() {
                 this.$refs.scroll.scrollTo(0, 0)
             },
             contentScroll(position) {
-                this.isShowBackTop = -position.y > 1000
+                // 1.判断BackTop是否显示
+                this.isShowBackTop = (-position.y) > 1000
+
+                // 2.决定tabControl是否吸顶(position: fixed)
+                this.isTabFixed = (-position.y) > this.tabOffsetTop
+                // this.$refs.tabControl.$el.offsetTop
+            },
+            loadMore() {
+                this.getHomeGoods(this.currentType)
+            },
+            swiperImageLoad() {
+                this.tabOffsetTop = this.$refs.tabControl2.$el.offsetTop;
             },
             // 网络请求相关
             getHomeMultidata() {
@@ -102,6 +146,9 @@
                 getHomeGoods(type, page).then(res => {
                     this.goods[type].list.push(...res.data.list)
                     this.goods[type].page ++
+                    
+                    // 完成上拉加载更多
+                    this.$refs.scroll.finishPullUp()
                 })
             }
         }
@@ -110,23 +157,23 @@
 
 <style scoped>
     #home {
-        padding-top: 44px;
+        /* padding-top: 44px; */
         height: 100vh;
         position: relative;
     }
     .home-nav {
-        position: fixed;
         background-color: var(--color-tint);
         color: #fff;
+
+        /* position: fixed;
         top: 0;
         left: 0;
         right: 0;
-        z-index: 5;
+        z-index: 5; */
     }
     .tab-control {
-        position: sticky;
-        top: 44px;
-        z-index: 6;
+        position: relative;
+        z-index: 9;
     }
     .content {
         overflow: hidden;
